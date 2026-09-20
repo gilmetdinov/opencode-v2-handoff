@@ -1,0 +1,36 @@
+{
+  "name": "opencode-v2-handoff",
+  "version": "0.1.0",
+  "description": "Minimal deterministic end-of-session handoff for OpenCode v2 — writes a compact LATEST.md (goal/done/open/pointers/git/usage) so the next session resumes with just enough context.",
+  "type": "module",
+  "main": "src/plugin.js",
+  "exports": {
+    ".": "./src/plugin.js"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "opencode",
+    "opencode-v2",
+    "plugin",
+    "handoff",
+    "session",
+    "context",
+    "agent"
+  ],
+  "author": "Timur Gilmetdinov <gilmetdinov.dev@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gilmetdinov/opencode-v2-handoff"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test"
+  }
+}
