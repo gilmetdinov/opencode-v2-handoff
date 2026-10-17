@@ -9,6 +9,9 @@ import {
   trimBody,
   buildBody,
   resolveSessionRoot,
+  rememberSessionRoot,
+  recallSessionRoot,
+  SESSION_ROOT_LIMIT,
 } from "../src/plugin.js"
 
 const ROOT = "/proj"
@@ -114,4 +117,41 @@ test("resolveSessionRoot ignores empty and root-only locations", () => {
   const ctx = { location: { directory: "/proj/b" } }
   assert.equal(resolveSessionRoot({ location: "" }, { location: undefined }, ctx), "/proj/b")
   assert.equal(resolveSessionRoot({ location: { directory: "/" } }, {}, ctx), "/proj/b")
+})
+
+test("resolveSessionRoot uses the remembered root when the session is gone", () => {
+  const ctx = { location: { directory: "/proj/listener" } }
+  assert.equal(resolveSessionRoot(undefined, { data: { sessionID: "ses_x" } }, ctx, "/proj/owner"), "/proj/owner")
+})
+
+test("resolveSessionRoot prefers the live session over the remembered root", () => {
+  const info = { location: { directory: "/proj/live" } }
+  assert.equal(resolveSessionRoot(info, {}, { location: { directory: "/proj/listener" } }, "/proj/stale"), "/proj/live")
+})
+
+test("resolveSessionRoot ignores a junk remembered root", () => {
+  const ctx = { location: { directory: "/proj/listener" } }
+  assert.equal(resolveSessionRoot(undefined, {}, ctx, "/"), "/proj/listener")
+  assert.equal(resolveSessionRoot(undefined, {}, ctx, ""), "/proj/listener")
+})
+
+test("rememberSessionRoot / recallSessionRoot round-trip", () => {
+  rememberSessionRoot("ses_memo_a", "/proj/a")
+  assert.equal(recallSessionRoot("ses_memo_a"), "/proj/a")
+  assert.equal(recallSessionRoot("ses_memo_missing"), null)
+})
+
+test("rememberSessionRoot ignores unknown ids and junk roots", () => {
+  rememberSessionRoot("unknown", "/proj/x")
+  rememberSessionRoot("ses_memo_b", "")
+  rememberSessionRoot("ses_memo_c", "/")
+  assert.equal(recallSessionRoot("unknown"), null)
+  assert.equal(recallSessionRoot("ses_memo_b"), null)
+  assert.equal(recallSessionRoot("ses_memo_c"), null)
+})
+
+test("rememberSessionRoot stays bounded and evicts oldest first", () => {
+  for (let i = 0; i < SESSION_ROOT_LIMIT + 5; i++) rememberSessionRoot(`ses_memo_bulk_${i}`, `/proj/${i}`)
+  assert.equal(recallSessionRoot("ses_memo_bulk_0"), null)
+  assert.equal(recallSessionRoot(`ses_memo_bulk_${SESSION_ROOT_LIMIT + 4}`), `/proj/${SESSION_ROOT_LIMIT + 4}`)
 })

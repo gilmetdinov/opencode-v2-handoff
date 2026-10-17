@@ -122,11 +122,36 @@ export function relPath(root, abs) {
 // carries no location. Resolving the root from the listener's location would
 // write every session's snapshot into every connected project's docs/handoff.
 // `info.location` (from ctx.session.get) is a string or {directory, ...}.
-export function resolveSessionRoot(info, event, ctx) {
+// `remembered` is the root cached while the session was alive, used for
+// `session.deleted`: by then the session row is gone (ctx.session.get 404s)
+// and the event carries only {sessionID}, so live lookup is impossible.
+export function resolveSessionRoot(info, event, ctx, remembered = null) {
   const loc = info?.location
   const dir = typeof loc === "string" ? loc : loc?.directory
   if (typeof dir === "string" && dir !== "" && dir !== "/") return dir
+  if (typeof remembered === "string" && remembered !== "" && remembered !== "/") return remembered
   return event?.location?.directory ?? ctx?.location?.directory ?? null
+}
+
+// sessionID -> directory memo, filled while the session is alive so the archive
+// written on `session.deleted` still lands in the session's own project.
+// Bounded: a long-lived server sees many sessions.
+export const SESSION_ROOT_LIMIT = 500
+const sessionRoots = new Map()
+
+export function rememberSessionRoot(sessionID, root) {
+  if (typeof sessionID !== "string" || sessionID === "unknown") return
+  if (typeof root !== "string" || root === "" || root === "/") return
+  sessionRoots.delete(sessionID)
+  sessionRoots.set(sessionID, root)
+  while (sessionRoots.size > SESSION_ROOT_LIMIT) {
+    const oldest = sessionRoots.keys().next().value
+    sessionRoots.delete(oldest)
+  }
+}
+
+export function recallSessionRoot(sessionID) {
+  return sessionRoots.get(sessionID) ?? null
 }
 
 // --- Session semantics without an LLM: goal / done / usage ---
@@ -220,13 +245,15 @@ export function collectUsage(info) {
   return parts.join(" | ")
 }
 
-export async function buildBody({ project, sessionID, root, handoffDir, ctx }) {
-  let info = null
+export async function buildBody({ project, sessionID, root, handoffDir, ctx, info = null }) {
+  let session = info
   let messages = []
-  try {
-    info = await ctx.session.get({ sessionID })
-  } catch {
-    // session may have vanished between the event and the read
+  if (session === null) {
+    try {
+      session = await ctx.session.get({ sessionID })
+    } catch {
+      // session may have vanished between the event and the read
+    }
   }
   try {
     messages = normalizeMessages(await ctx.session.context({ sessionID }))
@@ -234,7 +261,7 @@ export async function buildBody({ project, sessionID, root, handoffDir, ctx }) {
     // best effort
   }
 
-  const goal = collectGoal(info, messages)
+  const goal = collectGoal(session, messages)
   const zones = collectZones(root, messages)
   const commands = collectCommands(messages)
   const files = collectFiles(root, messages)
@@ -252,7 +279,7 @@ export async function buildBody({ project, sessionID, root, handoffDir, ctx }) {
   // pointers = concrete files (from open, fallback to files touched)
   const pointers = (open.length ? open : files).slice(0, MAX_POINTERS)
 
-  const usage = collectUsage(info)
+  const usage = collectUsage(session)
 
   let body =
     `# Handoff: ${project} (auto)\n\n` +
@@ -331,22 +358,27 @@ async function handleEvent(ctx, event) {
 
   const sessionID = event.data?.sessionID ?? "unknown"
 
-  // Root = the session's own directory (see resolveSessionRoot).
+  // Root = the session's own directory (see resolveSessionRoot). On
+  // `session.deleted` the row is already gone, so fall back to the root
+  // remembered from the events seen while the session was alive.
   let info = null
   try {
     info = await ctx.session.get({ sessionID })
   } catch {
     // session may vanish between event and read — fall back below
   }
-  const root = resolveSessionRoot(info, event, ctx)
+  const root = resolveSessionRoot(info, event, ctx, recallSessionRoot(sessionID))
   if (typeof root !== "string" || root === "" || root === "/") return
+
+  // Remember the session's directory for its later archive/deletion.
+  if (!isEnd) rememberSessionRoot(sessionID, root)
 
   const optDir = ctx.options && typeof ctx.options.dir === "string" ? ctx.options.dir : null
   const dir = resolveDir(root, optDir ?? readJsonOverride(root) ?? DEFAULT_DIR)
   mkdirSync(dir, { recursive: true })
   const project = (path.basename(root) || "root").replace(/[^a-zA-Z0-9-_]+/g, "-").toLowerCase()
 
-  const body = await buildBody({ project, sessionID, root, handoffDir: dir, ctx })
+  const body = await buildBody({ project, sessionID, root, handoffDir: dir, ctx, info })
   const h = hash(body.replace(/^- updated: .*$/m, ""))
 
   if (!isEnd) {

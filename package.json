@@ -1,6 +1,6 @@
 {
   "name": "opencode-v2-handoff",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Minimal deterministic end-of-session handoff for OpenCode v2 — writes a compact LATEST.md (goal/done/open/pointers/git/usage) so the next session resumes with just enough context.",
   "type": "module",
   "main": "src/plugin.js",
