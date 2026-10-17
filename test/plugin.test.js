@@ -8,6 +8,7 @@ import {
   collectUsage,
   trimBody,
   buildBody,
+  resolveSessionRoot,
 } from "../src/plugin.js"
 
 const ROOT = "/proj"
@@ -90,4 +91,27 @@ test("buildBody assembles the minimal LATEST with a mocked ctx", async () => {
   assert.match(body, /## open\n/)
   assert.match(body, /## pointers\n/)
   assert.match(body, /## usage\nin 100 \| out 20/)
+})
+
+test("resolveSessionRoot prefers the session's own location", () => {
+  const info = { location: { directory: "/proj/a" } }
+  const event = { location: undefined }
+  const ctx = { location: { directory: "/proj/b" } }
+  assert.equal(resolveSessionRoot(info, event, ctx), "/proj/a")
+})
+
+test("resolveSessionRoot accepts a string location", () => {
+  assert.equal(resolveSessionRoot({ location: "/proj/a" }, {}, { location: { directory: "/proj/b" } }), "/proj/a")
+})
+
+test("resolveSessionRoot falls back to the listener location when the session has none", () => {
+  const ctx = { location: { directory: "/proj/b" } }
+  assert.equal(resolveSessionRoot(undefined, { location: undefined }, ctx), "/proj/b")
+  assert.equal(resolveSessionRoot({}, { location: { directory: "/proj/c" } }, ctx), "/proj/c")
+})
+
+test("resolveSessionRoot ignores empty and root-only locations", () => {
+  const ctx = { location: { directory: "/proj/b" } }
+  assert.equal(resolveSessionRoot({ location: "" }, { location: undefined }, ctx), "/proj/b")
+  assert.equal(resolveSessionRoot({ location: { directory: "/" } }, {}, ctx), "/proj/b")
 })

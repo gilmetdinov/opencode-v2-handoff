@@ -103,6 +103,12 @@ builds the snapshot deterministically:
 On `session.deleted` it additionally writes a per-session archive
 (`<project>-<day>-<short>.md`) and rotates the archive down to the latest 30.
 
+The snapshot is always routed to the **session's own project**. When several
+clients (TUIs in different projects, a managing daemon) share one OpenCode
+server, they all see the global event stream — the snapshot is resolved from
+the session's location, not the listener's, so it never lands in another
+project's `docs/handoff/`.
+
 ## Development
 
 ```sh

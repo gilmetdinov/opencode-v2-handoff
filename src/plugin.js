@@ -116,6 +116,19 @@ export function relPath(root, abs) {
   return abs
 }
 
+// Root for the handoff: the SESSION's own location, not the listener's.
+// Multiple clients (TUIs in different projects, the managing daemon) can share
+// one OpenCode server and all receive the global event stream; the event itself
+// carries no location. Resolving the root from the listener's location would
+// write every session's snapshot into every connected project's docs/handoff.
+// `info.location` (from ctx.session.get) is a string or {directory, ...}.
+export function resolveSessionRoot(info, event, ctx) {
+  const loc = info?.location
+  const dir = typeof loc === "string" ? loc : loc?.directory
+  if (typeof dir === "string" && dir !== "" && dir !== "/") return dir
+  return event?.location?.directory ?? ctx?.location?.directory ?? null
+}
+
 // --- Session semantics without an LLM: goal / done / usage ---
 
 function normalizeMessages(ctxResult) {
@@ -317,7 +330,15 @@ async function handleEvent(ctx, event) {
   if (!isFinalEvent(type) && !isEnd) return
 
   const sessionID = event.data?.sessionID ?? "unknown"
-  const root = event.location?.directory ?? ctx.location?.directory
+
+  // Root = the session's own directory (see resolveSessionRoot).
+  let info = null
+  try {
+    info = await ctx.session.get({ sessionID })
+  } catch {
+    // session may vanish between event and read — fall back below
+  }
+  const root = resolveSessionRoot(info, event, ctx)
   if (typeof root !== "string" || root === "" || root === "/") return
 
   const optDir = ctx.options && typeof ctx.options.dir === "string" ? ctx.options.dir : null
