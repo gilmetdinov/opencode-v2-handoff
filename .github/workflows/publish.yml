@@ -17,7 +17,11 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # Node 24: ships npm >= 11.5.1, which is required for OIDC trusted
+          # publishing. (Node 22 ships npm 10.x, which swallows the placeholder
+          # NODE_AUTH_TOKEN injected by registry-url instead of using OIDC and
+          # fails with a misleading 404 on PUT.)
+          node-version: 24
           registry-url: https://registry.npmjs.org/
 
       - run: npm ci --ignore-scripts
